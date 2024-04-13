@@ -39,8 +39,6 @@ tag_player2 = None
 current_player = None
 scores_player1 = 0
 scores_player2 = 0
-# color = WHITE
-
 
 # Function to draw the grid
 def draw_grid():
@@ -52,7 +50,7 @@ def draw_grid():
                 color = RED
             elif grid[row][column] == 2:
                 color = YELLOW
-            color = WHITE if grid[row][column] == 0 else RED
+            # color = WHITE if grid[row][column] == 0 else RED
             pygame.draw.rect(screen, color, [(MARGIN + GRID_SIZE) * column + START_X,
                                               (MARGIN + GRID_SIZE) * row + START_Y,
                                               GRID_SIZE, GRID_SIZE])
@@ -65,47 +63,62 @@ def display_counter():
     counter_player2 = font.render(f"Player 2: {scores_player2}", True, WHITE)
     screen.blit(counter_player2, (WIDTH - counter_player2.get_width() - 20, 20))
 
-def handle_client(player):
-    global client, addr, grid, current_player
+# def handle_timer_event():
+#     global total_time
+#     total_time -= 1
+#     if total_time <= 0:
+#         end_game()
+
+# def draw_timer():
+#     font = pygame.font.Font(None, 36)
+#     timer_surface = font.render(f"Time Left: {total_time} s", True, pygame.Color('white'))
+#     screen.blit(timer_surface, (WIDTH - 200, 30))
+
+# def end_game():
+#     print("Game Over")
+#     pygame.quit()
+#     sys.exit()
+
+def handle_client(role):
+    global grid, current_player, client, addr
     s.bind((host, port))
     s.listen(1)
+    print("Waiting for a connection...")
     client, addr = s.accept()
+    print("Connected to", addr)
+    current_player = 1  # Identificador para el servidor es 1 (Rojo)
+    client.sendall("Server".encode())  # Envía el rol al cliente
+    
     while True:
-        client.send(player.encode())
         data = client.recv(1024)
         if not data:
             break
-        elif data.decode() == "Client":
-            current_player = data.decode()
-        else:
-            data = json.loads(data.decode())
-            grid[data['row']][data['column']] = 1
-            print("recibido desde servidor:", data)
+        data = json.loads(data.decode())
+        grid[data['row']][data['column']] = 2  # Actualizar la cuadrícula con amarillo
+        print("Received from client:", data)
     client.close()
 
-def connect_to_server(player):
+def connect_to_server(role):
     global grid, current_player
-    c.settimeout(5.0)
-    try:
-        c.connect((host, port))
-        while True:
-            c.send(player.encode())
-            data = c.recv(1024)
-            if not data:
-                break
-            elif data.decode() == "Server":
-                current_player = data.decode()
-            else:
-                data = json.loads(data.decode())
-                grid[data['row']][data['column']] = 2
-        c.close()
-    except socket.timeout:
-        sys.exit()
+    c.connect((host, port))
+    current_player = 2  # Identificador para el cliente es 2 (Amarillo)
+    role = c.recv(1024).decode()
+    print("Connected as", role)
+
+    while True:
+        data = c.recv(1024)
+        if not data:
+            break
+        data = json.loads(data.decode())
+        grid[data['row']][data['column']] = 1
+        print("Received from server: ", data)
+    c.close()
 
 # Main function for the game
 def play():
-    global current_player
+    global current_player, scores_player1, scores_player2
 
+    # TIMER_EVENT = pygame.USEREVENT
     while True:
         # Draw the background
         screen.fill(NAVY_BLUE)
@@ -124,28 +137,20 @@ def play():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left mouse button
-                    # Calculate the grid position based on the click position
-                    column = (event.pos[0] - START_X) // (GRID_SIZE + MARGIN)
-                    row = (event.pos[1] - START_Y) // (GRID_SIZE + MARGIN)
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                column = (event.pos[0] - START_X) // (GRID_SIZE + MARGIN)
+                row = (event.pos[1] - START_Y) // (GRID_SIZE + MARGIN)
+                if 0 <= row < 10 and 0 <= column < 10 and grid[row][column] == 0:
+                    grid[row][column] = current_player
+                    data = json.dumps({'row': row, 'column': column}).encode()
+                    if current_player == 1:
+                        client.send(data)
+                    else:
+                        c.send(data)
+                    scores_player1 += 1 if current_player == 1 else 0
+                    scores_player2 += 1 if current_player == 2 else 0
 
-                    # Check if the position is within the grid
-                    if 0 <= row < 10 and 0 <= column < 10:
-                        # Check if there is already a point at that position
-                        if grid[row][column] == 0:
-                            # Place a point on the grid
-                            grid[row][column] = 1 if (current_player == "Server") else 2
-                            data = json.dumps({'row': row, 'column': column}).encode()
-                            if current_player == "Server":
-                                client.send(data)
-                            else:
-                                c.send(data)
-                            # Increment the sunk ships counter for player 1
-                            global scores_player1
-                            scores_player1 += 1
-                            # Update the screen
-                            pygame.display.flip()
+                    pygame.display.flip()
 
 # Function to display the menu
 def display_menu():
@@ -196,7 +201,7 @@ def display_menu():
                         play()
                     elif button_player_two.collidepoint(event.pos):
                         # c.send("Client".encode())
-                        threading.Thread(target=connect_to_server, args=("Client")).start()
+                        threading.Thread(target=connect_to_server, args=("Client",)).start()
                         play()
                     elif button_exit.collidepoint(event.pos):
                         pygame.quit()
