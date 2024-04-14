@@ -36,14 +36,12 @@ START_Y = (HEIGHT - TOTAL_SIZE) // 2
 # Initialize the grid matrix
 grid = [[0] * 10 for _ in range(10)]
 
-tag_player1 = None
-tag_player2 = None
 current_player = None
 scores_player1 = 0
 scores_player2 = 0
 total_time = 60
-start_ticks = pygame.time.get_ticks()  # Saves the initial ticks
 timer_active = False
+game_state = ""
 
 # Function to draw the grid
 def draw_grid():
@@ -68,34 +66,34 @@ def display_counter():
     counter_player2 = font.render(f"Player 2: {scores_player2}", True, WHITE)
     screen.blit(counter_player2, (WIDTH - counter_player2.get_width() - 20, 20))
 
-def end_game():
-    print("Game Over")
-    pygame.quit()
-    sys.exit()
-
 def update_timer():
-    global total_time
-    while isinstance(total_time, int) or isinstance(total_time, str):
+    global total_time, game_state
+    while total_time > 0:
         if timer_active == True:
             # seconds_passed = (pygame.time.get_ticks() - 1) / 1000  # Convert milliseconds to seconds
             total_time -= 1
             time.sleep(1)
             if total_time <= 0:
-                total_time = None
-                end_game()  # Call the end game function when the timer runs out
+                total_time = 0
+                game_state = "Game Over"
                 # return 0
             # return total_time
         else: 
             # return "Waiting"
-            total_time = 60
+            total_time = 30
 
 def draw_timer(current_time):
     font = pygame.font.Font(None, 36)
     timer_surface = font.render(f"{current_time}s", True, pygame.Color('white'))
     screen.blit(timer_surface, (400, 30))
 
+def draw_text(text, x, y, screen, font_size):
+    font = pygame.font.Font(None, font_size)
+    rendered_text = font.render(text, True, (255, 255, 255))
+    screen.blit(rendered_text, (x, y))
+
 def handle_client(role):
-    global grid, current_player, client, addr, timer_active
+    global grid, current_player, client, addr, timer_active, scores_player2
     s.bind((host, port))
     s.listen(1)
     print("Waiting for a connection...")
@@ -112,10 +110,11 @@ def handle_client(role):
         data = json.loads(data.decode())
         grid[data['row']][data['column']] = 2  # Actualizar la cuadrícula con amarillo
         print("Received from client:", data)
+        scores_player2 = data['score']
     client.close()
 
 def connect_to_server(role):
-    global grid, current_player, timer_active
+    global grid, current_player, timer_active, scores_player1
     c.connect((host, port))
     current_player = 2  # Identificador para el cliente es 2 (Amarillo)
     role = c.recv(1024).decode()
@@ -128,7 +127,19 @@ def connect_to_server(role):
         data = json.loads(data.decode())
         grid[data['row']][data['column']] = 1
         print("Received from server: ", data)
+        scores_player1 = data['score']
     c.close()
+
+def game_over():
+    global scores_player1, scores_player2
+    screen.fill((0,0,0))
+    draw_text('Game Over', 315, 40, screen, 36)
+    if scores_player1 > scores_player2:
+        draw_text('Player 1 wins!', 315, 300, screen, 36)
+    elif scores_player1 < scores_player2:
+        draw_text('player 2 wins!', 315, 300, screen, 36)
+    else:
+        draw_text('Its a tie', 315, 300, screen, 36)
 
 # Main function for the game
 def play():
@@ -158,18 +169,32 @@ def play():
                 row = (event.pos[1] - START_Y) // (GRID_SIZE + MARGIN)
                 if 0 <= row < 10 and 0 <= column < 10 and grid[row][column] == 0:
                     grid[row][column] = current_player
-                    data = json.dumps({'row': row, 'column': column}).encode()
+                    data = {'row': row, 'column': column}
                     if current_player == 1:
+                        scores_player1 += 1
+                        data['score'] = scores_player1
+                        data = json.dumps(data).encode()
                         client.send(data)
                     else:
+                        scores_player2 += 1
+                        data['score'] = scores_player2
+                        data = json.dumps(data).encode()
                         c.send(data)
-                    scores_player1 += 1 if current_player == 1 else 0
-                    scores_player2 += 1 if current_player == 2 else 0
+                    
+                    # scores_player1 += 1 if current_player == 1 else 0
+                    # scores_player2 += 1 if current_player == 2 else 0
+
         # pygame.display.flip()
+        if game_state == "Game Over":
+            game_over()
+            pygame.display.flip()
+            time.sleep(5)
+            pygame.quit()
+            sys.exit()
 
 # Function to display the menu
 def display_menu():
-    global tag_player1, tag_player2, current_player
+    global current_player
     # Initialize pygame
     pygame.init()
     
