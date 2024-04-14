@@ -3,8 +3,10 @@ import sys
 import socket
 import threading
 import json
+import time
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 host = 'localhost'
 port = 3000
@@ -39,6 +41,9 @@ tag_player2 = None
 current_player = None
 scores_player1 = 0
 scores_player2 = 0
+total_time = 60
+start_ticks = pygame.time.get_ticks()  # Saves the initial ticks
+timer_active = False
 
 # Function to draw the grid
 def draw_grid():
@@ -63,28 +68,39 @@ def display_counter():
     counter_player2 = font.render(f"Player 2: {scores_player2}", True, WHITE)
     screen.blit(counter_player2, (WIDTH - counter_player2.get_width() - 20, 20))
 
-# def handle_timer_event():
-#     global total_time
-#     total_time -= 1
-#     if total_time <= 0:
-#         end_game()
+def end_game():
+    print("Game Over")
+    pygame.quit()
+    sys.exit()
 
-# def draw_timer():
-#     font = pygame.font.Font(None, 36)
-#     timer_surface = font.render(f"Time Left: {total_time} s", True, pygame.Color('white'))
-#     screen.blit(timer_surface, (WIDTH - 200, 30))
+def update_timer():
+    global total_time
+    while isinstance(total_time, int) or isinstance(total_time, str):
+        if timer_active == True:
+            # seconds_passed = (pygame.time.get_ticks() - 1) / 1000  # Convert milliseconds to seconds
+            total_time -= 1
+            time.sleep(1)
+            if total_time <= 0:
+                total_time = None
+                end_game()  # Call the end game function when the timer runs out
+                # return 0
+            # return total_time
+        else: 
+            # return "Waiting"
+            total_time = 60
 
-# def end_game():
-#     print("Game Over")
-#     pygame.quit()
-#     sys.exit()
+def draw_timer(current_time):
+    font = pygame.font.Font(None, 36)
+    timer_surface = font.render(f"{current_time}s", True, pygame.Color('white'))
+    screen.blit(timer_surface, (400, 30))
 
 def handle_client(role):
-    global grid, current_player, client, addr
+    global grid, current_player, client, addr, timer_active
     s.bind((host, port))
     s.listen(1)
     print("Waiting for a connection...")
     client, addr = s.accept()
+    timer_active = True
     print("Connected to", addr)
     current_player = 1  # Identificador para el servidor es 1 (Rojo)
     client.sendall("Server".encode())  # Envía el rol al cliente
@@ -99,12 +115,12 @@ def handle_client(role):
     client.close()
 
 def connect_to_server(role):
-    global grid, current_player
+    global grid, current_player, timer_active
     c.connect((host, port))
     current_player = 2  # Identificador para el cliente es 2 (Amarillo)
     role = c.recv(1024).decode()
     print("Connected as", role)
-
+    timer_active = True
     while True:
         data = c.recv(1024)
         if not data:
@@ -117,8 +133,7 @@ def connect_to_server(role):
 # Main function for the game
 def play():
     global current_player, scores_player1, scores_player2
-
-    # TIMER_EVENT = pygame.USEREVENT
+    threading.Thread(target=update_timer).start()
     while True:
         # Draw the background
         screen.fill(NAVY_BLUE)
@@ -126,10 +141,11 @@ def play():
         # Draw the grid
         draw_grid()
 
-        # Display the sunk ships counter
+        # Display the grid counter
         display_counter()
-
-        # Update the screen
+        # current_time = update_timer()  # Update the timer
+        draw_timer(total_time)  # Draw the timer on the screen
+        #Update the screen
         pygame.display.flip()
 
         # Handle events
@@ -149,8 +165,7 @@ def play():
                         c.send(data)
                     scores_player1 += 1 if current_player == 1 else 0
                     scores_player2 += 1 if current_player == 2 else 0
-
-                    pygame.display.flip()
+        # pygame.display.flip()
 
 # Function to display the menu
 def display_menu():
@@ -200,7 +215,6 @@ def display_menu():
                         threading.Thread(target=handle_client, args=("Server",)).start()
                         play()
                     elif button_player_two.collidepoint(event.pos):
-                        # c.send("Client".encode())
                         threading.Thread(target=connect_to_server, args=("Client",)).start()
                         play()
                     elif button_exit.collidepoint(event.pos):
@@ -211,7 +225,7 @@ def display_menu():
 
 # Set up the screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Battleship")
+pygame.display.set_caption("Paint")
 
 # Run the menu
 display_menu()
